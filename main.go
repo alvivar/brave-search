@@ -95,19 +95,13 @@ func main() {
 		fmt.Fprintf(out, "  brave-search -json \"golang http client\"\n\n")
 		fmt.Fprintf(out, "Flags:\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(out, "\nAPI key lookup order:\n")
+		fmt.Fprintf(out, "\nEmbedded API keys (.env at build time):\n")
 		fmt.Fprintf(out, "  Search mode:\n")
-		fmt.Fprintf(out, "    1. BRAVE_API_KEY environment variable\n")
-		fmt.Fprintf(out, "    2. BRAVE_SEARCH_API_KEY environment variable\n")
-		fmt.Fprintf(out, "    3. BRAVE_API_KEY in embedded .env\n")
-		fmt.Fprintf(out, "    4. search_key in embedded .env\n")
-		fmt.Fprintf(out, "    5. answer_key in embedded .env\n")
+		fmt.Fprintf(out, "    1. SEARCH_KEY\n")
+		fmt.Fprintf(out, "    2. ANSWER_KEY\n")
 		fmt.Fprintf(out, "  Answer mode:\n")
-		fmt.Fprintf(out, "    1. BRAVE_API_KEY environment variable\n")
-		fmt.Fprintf(out, "    2. BRAVE_ANSWER_API_KEY environment variable\n")
-		fmt.Fprintf(out, "    3. BRAVE_API_KEY in embedded .env\n")
-		fmt.Fprintf(out, "    4. answer_key in embedded .env\n")
-		fmt.Fprintf(out, "    5. search_key in embedded .env\n")
+		fmt.Fprintf(out, "    1. ANSWER_KEY\n")
+		fmt.Fprintf(out, "    2. SEARCH_KEY\n")
 	}
 
 	q := flag.String("q", "", "query or prompt")
@@ -139,7 +133,7 @@ func main() {
 
 	apiKey := resolveAPIKey(mode)
 	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "no API key found; set BRAVE_API_KEY or add search_key/answer_key to .env before building")
+		fmt.Fprintln(os.Stderr, "no embedded API key found; add SEARCH_KEY and/or ANSWER_KEY to .env and rebuild")
 		os.Exit(1)
 	}
 
@@ -473,28 +467,11 @@ func sanitizeWidth(width int) int {
 }
 
 func resolveAPIKey(mode string) string {
-	if value := strings.TrimSpace(os.Getenv("BRAVE_API_KEY")); value != "" {
-		return value
-	}
-
-	if mode == "answer" {
-		if value := strings.TrimSpace(os.Getenv("BRAVE_ANSWER_API_KEY")); value != "" {
-			return value
-		}
-	} else {
-		if value := strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")); value != "" {
-			return value
-		}
-	}
-
 	values := parseDotEnv(embeddedEnv)
-	if value := strings.TrimSpace(values["BRAVE_API_KEY"]); value != "" {
-		return value
-	}
 
-	keys := []string{"search_key", "answer_key"}
+	keys := []string{"SEARCH_KEY", "ANSWER_KEY"}
 	if mode == "answer" {
-		keys = []string{"answer_key", "search_key"}
+		keys = []string{"ANSWER_KEY", "SEARCH_KEY"}
 	}
 	for _, key := range keys {
 		if value := strings.TrimSpace(values[key]); value != "" {
@@ -519,7 +496,7 @@ func parseDotEnv(content string) map[string]string {
 			continue
 		}
 
-		key = strings.TrimSpace(key)
+		key = strings.ToUpper(strings.TrimSpace(key))
 		value = strings.TrimSpace(value)
 		value = strings.Trim(value, `"'`)
 		values[key] = value
