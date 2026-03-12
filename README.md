@@ -1,4 +1,4 @@
-# Brave CLI
+# brave-search
 
 A small Go command-line app for calling Brave Search APIs.
 
@@ -17,7 +17,6 @@ POST https://api.search.brave.com/res/v1/chat/completions
 The app supports:
 
 - embedded `.env` values at build time
-- `BRAVE_API_KEY` environment override
 - positional or flag-based queries
 - human-friendly CLI output by default
 - compact titles-only, pretty JSON, or raw output modes
@@ -39,31 +38,19 @@ go build -o brave-search .
 
 ### Search mode lookup order
 
-1. `BRAVE_API_KEY` environment variable
-2. `BRAVE_SEARCH_API_KEY` environment variable
-3. `BRAVE_API_KEY` in embedded `.env`
-4. `search_key` in embedded `.env`
-5. `answer_key` in embedded `.env`
+1. `SEARCH_KEY` in embedded `.env`
+2. `ANSWER_KEY` in embedded `.env`
 
 ### Answer mode lookup order
 
-1. `BRAVE_API_KEY` environment variable
-2. `BRAVE_ANSWER_API_KEY` environment variable
-3. `BRAVE_API_KEY` in embedded `.env`
-4. `answer_key` in embedded `.env`
-5. `search_key` in embedded `.env`
+1. `ANSWER_KEY` in embedded `.env`
+2. `SEARCH_KEY` in embedded `.env`
 
 Example `.env`:
 
 ```env
-search_key=your_search_api_key_here
-answer_key=your_answer_api_key_here
-```
-
-You can also use:
-
-```env
-BRAVE_API_KEY=your_api_key_here
+SEARCH_KEY=your_search_api_key_here
+ANSWER_KEY=your_answer_api_key_here
 ```
 
 > `.env` is embedded into the binary at build time. If you change `.env`, rebuild the app.
@@ -124,20 +111,6 @@ Control CLI wrapping width:
 
 ```bash
 brave-search -width 100 "Brave Search"
-```
-
-Set the API key via environment variable:
-
-```bash
-export BRAVE_API_KEY="your_api_key_here"
-brave-search "Brave Search"
-```
-
-On PowerShell:
-
-```powershell
-$env:BRAVE_API_KEY="your_api_key_here"
-.\brave-search.exe "Brave Search"
 ```
 
 ## Flags
