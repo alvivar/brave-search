@@ -95,13 +95,6 @@ func main() {
 		fmt.Fprintf(out, "  brave-search -json \"golang http client\"\n\n")
 		fmt.Fprintf(out, "Flags:\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(out, "\nEmbedded API keys (.env at build time):\n")
-		fmt.Fprintf(out, "  Search mode:\n")
-		fmt.Fprintf(out, "    1. SEARCH_KEY\n")
-		fmt.Fprintf(out, "    2. ANSWER_KEY\n")
-		fmt.Fprintf(out, "  Answer mode:\n")
-		fmt.Fprintf(out, "    1. ANSWER_KEY\n")
-		fmt.Fprintf(out, "    2. SEARCH_KEY\n")
 	}
 
 	q := flag.String("q", "", "query or prompt")
