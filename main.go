@@ -28,6 +28,14 @@ const (
 //go:embed .env
 var embeddedEnv string
 
+var embeddedEnvValues = parseDotEnv(embeddedEnv)
+
+type webResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+}
+
 type searchRequest struct {
 	Query      string `json:"q"`
 	Country    string `json:"country"`
@@ -40,11 +48,7 @@ type searchResponse struct {
 		Original string `json:"original"`
 	} `json:"query"`
 	Web struct {
-		Results []struct {
-			Title       string `json:"title"`
-			URL         string `json:"url"`
-			Description string `json:"description"`
-		} `json:"results"`
+		Results []webResult `json:"results"`
 	} `json:"web"`
 }
 
@@ -58,23 +62,19 @@ type answerMessage struct {
 	Content string `json:"content"`
 }
 
+type answerChoice struct {
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+	Delta struct {
+		Content string `json:"content"`
+	} `json:"delta"`
+}
+
 type answerResponse struct {
-	Model   string `json:"model"`
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Choices []struct {
-		Index        int    `json:"index"`
-		FinishReason string `json:"finish_reason"`
-		Message      struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		Delta struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"delta"`
-	} `json:"choices"`
-	Usage struct {
+	Model   string         `json:"model"`
+	Choices []answerChoice `json:"choices"`
+	Usage   struct {
 		CompletionTokens int `json:"completion_tokens"`
 		PromptTokens     int `json:"prompt_tokens"`
 		TotalTokens      int `json:"total_tokens"`
@@ -120,25 +120,23 @@ func main() {
 	if query == "" && flag.NArg() > 0 {
 		query = strings.TrimSpace(strings.Join(flag.Args(), " "))
 	}
-
 	if query == "" {
 		flag.Usage()
 		return
 	}
 
-	mode := "search"
-	if *answerMode {
-		mode = "answer"
-	}
-
-	apiKey := resolveAPIKey(mode)
+	apiKey := resolveAPIKey(*answerMode)
 	if apiKey == "" {
 		fmt.Fprintln(os.Stderr, "no embedded API key found; add SEARCH_KEY and/or ANSWER_KEY to .env and rebuild")
 		os.Exit(1)
 	}
 
-	var respBody []byte
-	var err error
+	outputWidth := sanitizeWidth(*width)
+
+	var (
+		respBody []byte
+		err      error
+	)
 	if *answerMode {
 		respBody, err = callAnswerAPI(apiKey, query, *timeout)
 	} else {
@@ -149,27 +147,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *raw {
+	switch {
+	case *raw:
 		fmt.Println(string(respBody))
-		return
-	}
-
-	if *jsonOutput {
+	case *jsonOutput:
 		printPrettyJSON(respBody)
-		return
+	case *answerMode:
+		printAnswer(respBody, query, outputWidth)
+	case *titlesOnly:
+		printTitles(respBody, outputWidth)
+	default:
+		printCLIResults(respBody, query, outputWidth)
 	}
-
-	if *answerMode {
-		printAnswer(respBody, query, sanitizeWidth(*width))
-		return
-	}
-
-	if *titlesOnly {
-		printTitles(respBody, sanitizeWidth(*width))
-		return
-	}
-
-	printCLIResults(respBody, query, sanitizeWidth(*width))
 }
 
 func callSearchAPI(apiKey, query, country, searchLang string, count int, timeout time.Duration) ([]byte, error) {
@@ -248,14 +237,12 @@ func doJSONRequest(endpoint, apiKey string, body []byte, timeout time.Duration) 
 }
 
 func formatHTTPError(statusCode int, status string, body []byte) error {
-	var message string
+	message := fmt.Sprintf("request failed: %s", status)
 	switch statusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		message = fmt.Sprintf("authentication failed: %s", status)
 	case http.StatusTooManyRequests:
 		message = fmt.Sprintf("rate limited: %s", status)
-	default:
-		message = fmt.Sprintf("request failed: %s", status)
 	}
 
 	if len(body) == 0 {
@@ -276,37 +263,41 @@ func printCLIResults(body []byte, fallbackQuery string, width int) {
 		query = fallbackQuery
 	}
 
-	results := response.Web.Results
-	if len(results) == 0 {
+	if len(response.Web.Results) == 0 {
 		fmt.Printf("No web results for %q.\n", query)
 		return
 	}
 
 	fmt.Printf("Brave Search results for %q\n", query)
-	fmt.Printf("%d result(s)\n", len(results))
+	fmt.Printf("%d result(s)\n", len(response.Web.Results))
 	fmt.Println(separator)
 
-	for i, result := range results {
-		title := strings.TrimSpace(result.Title)
-		if title == "" {
-			title = "(untitled result)"
-		}
-
-		fmt.Printf("[%d] %s\n", i+1, title)
-		fmt.Println(indentLines(strings.TrimSpace(result.URL), resultIndent))
-
-		description := strings.TrimSpace(result.Description)
-		if description != "" {
-			fmt.Println()
-			for _, line := range wrapText(description, width-len(resultIndent)) {
-				fmt.Println(resultIndent + line)
-			}
-		}
-
-		if i < len(results)-1 {
+	for i, result := range response.Web.Results {
+		printWebResult(i, result, width)
+		if i < len(response.Web.Results)-1 {
 			fmt.Println()
 			fmt.Println(separator)
 		}
+	}
+}
+
+func printWebResult(index int, result webResult, width int) {
+	title := strings.TrimSpace(result.Title)
+	if title == "" {
+		title = "(untitled result)"
+	}
+
+	fmt.Printf("[%d] %s\n", index+1, title)
+	fmt.Printf("%s%s\n", resultIndent, strings.TrimSpace(result.URL))
+
+	description := strings.TrimSpace(result.Description)
+	if description == "" {
+		return
+	}
+
+	fmt.Println()
+	for _, line := range wrapText(description, width-len(resultIndent)) {
+		fmt.Println(resultIndent + line)
 	}
 }
 
@@ -412,22 +403,21 @@ func wrapParagraphs(text string, width int) []string {
 }
 
 func wrapText(text string, width int) []string {
-	text = strings.Join(strings.Fields(text), " ")
-	if text == "" {
-		return nil
-	}
-
 	if width < minimumWrapWidth {
 		width = minimumWrapWidth
 	}
 
 	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+
 	lines := make([]string, 0, len(words)/8+1)
 	current := words[0]
-	currentWidth := runeWidth(current)
+	currentWidth := utf8.RuneCountInString(current)
 
 	for _, word := range words[1:] {
-		wordWidth := runeWidth(word)
+		wordWidth := utf8.RuneCountInString(word)
 		if currentWidth+1+wordWidth <= width {
 			current += " " + word
 			currentWidth += 1 + wordWidth
@@ -443,22 +433,6 @@ func wrapText(text string, width int) []string {
 	return lines
 }
 
-func indentLines(text, indent string) string {
-	if text == "" {
-		return indent
-	}
-
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		lines[i] = indent + line
-	}
-	return strings.Join(lines, "\n")
-}
-
-func runeWidth(value string) int {
-	return utf8.RuneCountInString(value)
-}
-
 func sanitizeWidth(width int) int {
 	if width < minimumWrapWidth {
 		return minimumWrapWidth
@@ -466,15 +440,14 @@ func sanitizeWidth(width int) int {
 	return width
 }
 
-func resolveAPIKey(mode string) string {
-	values := parseDotEnv(embeddedEnv)
-
+func resolveAPIKey(answerMode bool) string {
 	keys := []string{"SEARCH_KEY", "ANSWER_KEY"}
-	if mode == "answer" {
+	if answerMode {
 		keys = []string{"ANSWER_KEY", "SEARCH_KEY"}
 	}
+
 	for _, key := range keys {
-		if value := strings.TrimSpace(values[key]); value != "" {
+		if value := strings.TrimSpace(embeddedEnvValues[key]); value != "" {
 			return value
 		}
 	}
@@ -497,8 +470,7 @@ func parseDotEnv(content string) map[string]string {
 		}
 
 		key = strings.ToUpper(strings.TrimSpace(key))
-		value = strings.TrimSpace(value)
-		value = strings.Trim(value, `"'`)
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
 		values[key] = value
 	}
 
