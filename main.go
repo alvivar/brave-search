@@ -13,9 +13,16 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-const endpoint = "https://api.search.brave.com/res/v1/web/search"
+const (
+	endpoint         = "https://api.search.brave.com/res/v1/web/search"
+	defaultWrapWidth = 88
+	minimumWrapWidth = 40
+	resultIndent     = "    "
+	separator        = "────────────────────────────────────────────────────────────────────────────────"
+)
 
 //go:embed .env
 var embeddedEnv string
@@ -28,6 +35,9 @@ type searchRequest struct {
 }
 
 type searchResponse struct {
+	Query struct {
+		Original string `json:"original"`
+	} `json:"query"`
 	Web struct {
 		Results []struct {
 			Title       string `json:"title"`
@@ -46,7 +56,8 @@ func main() {
 		fmt.Fprintf(out, "Examples:\n")
 		fmt.Fprintf(out, "  brave-search \"Brave Search\"\n")
 		fmt.Fprintf(out, "  brave-search -q \"golang http client\" -count 10\n")
-		fmt.Fprintf(out, "  brave-search -titles \"golang http client\"\n\n")
+		fmt.Fprintf(out, "  brave-search -titles \"golang http client\"\n")
+		fmt.Fprintf(out, "  brave-search -json \"golang http client\"\n\n")
 		fmt.Fprintf(out, "Flags:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(out, "\nAPI key lookup order:\n")
@@ -61,7 +72,9 @@ func main() {
 	searchLang := flag.String("search-lang", "en", "search language")
 	count := flag.Int("count", 20, "number of results")
 	timeout := flag.Duration("timeout", 30*time.Second, "request timeout")
-	titlesOnly := flag.Bool("titles", false, "print titles and URLs only")
+	width := flag.Int("width", defaultWrapWidth, "CLI output wrap width")
+	titlesOnly := flag.Bool("titles", false, "print compact titles and URLs only")
+	jsonOutput := flag.Bool("json", false, "print pretty JSON")
 	raw := flag.Bool("raw", false, "print raw response body")
 	flag.Parse()
 
@@ -141,12 +154,17 @@ func main() {
 		return
 	}
 
-	if *titlesOnly {
-		printTitles(respBody)
+	if *jsonOutput {
+		printPrettyJSON(respBody)
 		return
 	}
 
-	printPrettyJSON(respBody)
+	if *titlesOnly {
+		printTitles(respBody, sanitizeWidth(*width))
+		return
+	}
+
+	printCLIResults(respBody, query, sanitizeWidth(*width))
 }
 
 func handleHTTPError(statusCode int, status string, body []byte) {
@@ -165,7 +183,53 @@ func handleHTTPError(statusCode int, status string, body []byte) {
 	os.Exit(1)
 }
 
-func printTitles(body []byte) {
+func printCLIResults(body []byte, fallbackQuery string, width int) {
+	var response searchResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		printPrettyJSON(body)
+		return
+	}
+
+	query := strings.TrimSpace(response.Query.Original)
+	if query == "" {
+		query = fallbackQuery
+	}
+
+	results := response.Web.Results
+	if len(results) == 0 {
+		fmt.Printf("No web results for %q.\n", query)
+		return
+	}
+
+	fmt.Printf("Brave Search results for %q\n", query)
+	fmt.Printf("%d result(s)\n", len(results))
+	fmt.Println(separator)
+
+	for i, result := range results {
+		title := strings.TrimSpace(result.Title)
+		if title == "" {
+			title = "(untitled result)"
+		}
+
+		fmt.Printf("[%d] %s\n", i+1, title)
+		fmt.Println(indentLines(strings.TrimSpace(result.URL), resultIndent))
+
+		description := strings.TrimSpace(result.Description)
+		if description != "" {
+			fmt.Println()
+			for _, line := range wrapText(description, width-len(resultIndent)) {
+				fmt.Println(resultIndent + line)
+			}
+		}
+
+		if i < len(results)-1 {
+			fmt.Println()
+			fmt.Println(separator)
+		}
+	}
+}
+
+func printTitles(body []byte, width int) {
 	var response searchResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		printPrettyJSON(body)
@@ -178,10 +242,17 @@ func printTitles(body []byte) {
 	}
 
 	for i, result := range response.Web.Results {
-		fmt.Printf("%d. %s\n", i+1, strings.TrimSpace(result.Title))
+		title := strings.TrimSpace(result.Title)
+		if title == "" {
+			title = "(untitled result)"
+		}
+
+		fmt.Printf("%d. %s\n", i+1, title)
 		fmt.Printf("   %s\n", strings.TrimSpace(result.URL))
 		if description := strings.TrimSpace(result.Description); description != "" {
-			fmt.Printf("   %s\n", description)
+			for _, line := range wrapText(description, width-3) {
+				fmt.Printf("   %s\n", line)
+			}
 		}
 		fmt.Println()
 	}
@@ -195,6 +266,61 @@ func printPrettyJSON(body []byte) {
 	}
 
 	fmt.Println(pretty.String())
+}
+
+func wrapText(text string, width int) []string {
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" {
+		return nil
+	}
+
+	if width < minimumWrapWidth {
+		width = minimumWrapWidth
+	}
+
+	words := strings.Fields(text)
+	lines := make([]string, 0, len(words)/8+1)
+	current := words[0]
+	currentWidth := runeWidth(current)
+
+	for _, word := range words[1:] {
+		wordWidth := runeWidth(word)
+		if currentWidth+1+wordWidth <= width {
+			current += " " + word
+			currentWidth += 1 + wordWidth
+			continue
+		}
+
+		lines = append(lines, current)
+		current = word
+		currentWidth = wordWidth
+	}
+
+	lines = append(lines, current)
+	return lines
+}
+
+func indentLines(text, indent string) string {
+	if text == "" {
+		return indent
+	}
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = indent + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func runeWidth(value string) int {
+	return utf8.RuneCountInString(value)
+}
+
+func sanitizeWidth(width int) int {
+	if width < minimumWrapWidth {
+		return minimumWrapWidth
+	}
+	return width
 }
 
 func resolveAPIKey() string {
