@@ -259,7 +259,7 @@ func formatHTTPError(statusCode int, status string, body []byte) error {
 	}
 
 	if len(body) == 0 {
-		return fmt.Errorf(message)
+		return fmt.Errorf("%s", message)
 	}
 	return fmt.Errorf("%s\n%s", message, body)
 }
