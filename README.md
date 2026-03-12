@@ -13,7 +13,8 @@ The app supports:
 - embedded `.env` values at build time
 - `BRAVE_API_KEY` environment override
 - positional or flag-based queries
-- pretty JSON, raw output, or titles-only output
+- human-friendly CLI output by default
+- compact titles-only, pretty JSON, or raw output modes
 - gzip-compressed responses
 
 ## Build
@@ -71,16 +72,28 @@ Search with flags:
 brave-search -q "Brave Search" -country US -search-lang en -count 20
 ```
 
-Print titles and URLs only:
+Print compact titles and URLs only:
 
 ```bash
 brave-search -titles "golang http client"
+```
+
+Print pretty JSON:
+
+```bash
+brave-search -json "Brave Search"
 ```
 
 Print the raw API response:
 
 ```bash
 brave-search -raw "Brave Search"
+```
+
+Control CLI wrapping width:
+
+```bash
+brave-search -width 100 "Brave Search"
 ```
 
 Set the API key via environment variable:
@@ -104,8 +117,19 @@ $env:BRAVE_API_KEY="your_api_key_here"
 - `-search-lang` search language, default `en`
 - `-count` number of results, default `20`
 - `-timeout` request timeout, default `30s`
-- `-titles` print titles, URLs, and descriptions only
+- `-width` CLI output wrap width, default `88`
+- `-titles` print compact titles, URLs, and descriptions
+- `-json` print pretty JSON
 - `-raw` print raw response body
+
+## Default CLI output
+
+By default, results are printed in a human-friendly terminal format with:
+
+- numbered results
+- indented URLs
+- wrapped descriptions
+- separators between entries
 
 ## Example curl equivalent
 
@@ -130,4 +154,5 @@ curl -s --compressed -X 'POST' \
 
 - If the API returns a non-2xx status, the app prints the error body.
 - Authentication and rate-limit errors are reported with clearer messages.
-- The default output format is pretty-printed JSON.
+- The default output format is human-friendly CLI text.
+- Use `-json` if you want machine-friendly pretty JSON output.
