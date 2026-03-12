@@ -1,11 +1,17 @@
-# Brave Search CLI
+# Brave CLI
 
-A small Go command-line app for calling the Brave Search Web Search API.
+A small Go command-line app for calling Brave Search APIs.
 
-It sends a `POST` request to:
+It supports both:
+
+- **Web Search API** for search results
+- **Answers API** for AI-generated answers backed by Brave search
+
+Endpoints used:
 
 ```text
-https://api.search.brave.com/res/v1/web/search
+POST https://api.search.brave.com/res/v1/web/search
+POST https://api.search.brave.com/res/v1/chat/completions
 ```
 
 The app supports:
@@ -31,23 +37,33 @@ go build -o brave-search .
 
 ## API key configuration
 
-The binary looks up the API key in this order:
+### Search mode lookup order
 
 1. `BRAVE_API_KEY` environment variable
-2. `BRAVE_API_KEY` in embedded `.env`
-3. `search_key` in embedded `.env`
+2. `BRAVE_SEARCH_API_KEY` environment variable
+3. `BRAVE_API_KEY` in embedded `.env`
+4. `search_key` in embedded `.env`
+5. `answer_key` in embedded `.env`
+
+### Answer mode lookup order
+
+1. `BRAVE_API_KEY` environment variable
+2. `BRAVE_ANSWER_API_KEY` environment variable
+3. `BRAVE_API_KEY` in embedded `.env`
 4. `answer_key` in embedded `.env`
+5. `search_key` in embedded `.env`
 
 Example `.env`:
 
 ```env
-BRAVE_API_KEY=your_api_key_here
+search_key=your_search_api_key_here
+answer_key=your_answer_api_key_here
 ```
 
-or:
+You can also use:
 
 ```env
-search_key=your_api_key_here
+BRAVE_API_KEY=your_api_key_here
 ```
 
 > `.env` is embedded into the binary at build time. If you change `.env`, rebuild the app.
@@ -59,6 +75,8 @@ Run with no arguments to show help:
 ```bash
 brave-search
 ```
+
+### Web search
 
 Search with a positional query:
 
@@ -78,16 +96,28 @@ Print compact titles and URLs only:
 brave-search -titles "golang http client"
 ```
 
+### Answers API
+
+Ask for an AI-generated answer:
+
+```bash
+brave-search -answer "What is the second highest mountain?"
+```
+
+### Output modes
+
 Print pretty JSON:
 
 ```bash
 brave-search -json "Brave Search"
+brave-search -answer -json "What is the second highest mountain?"
 ```
 
 Print the raw API response:
 
 ```bash
 brave-search -raw "Brave Search"
+brave-search -answer -raw "What is the second highest mountain?"
 ```
 
 Control CLI wrapping width:
@@ -112,43 +142,40 @@ $env:BRAVE_API_KEY="your_api_key_here"
 
 ## Flags
 
-- `-q` search query
-- `-country` country code, default `US`
-- `-search-lang` search language, default `en`
-- `-count` number of results, default `20`
+- `-q` query or prompt
+- `-answer` use the Answers API instead of Web Search
+- `-country` country code for search mode, default `US`
+- `-search-lang` search language for search mode, default `en`
+- `-count` number of results for search mode, default `20`
 - `-timeout` request timeout, default `30s`
 - `-width` CLI output wrap width, default `88`
-- `-titles` print compact titles, URLs, and descriptions
+- `-titles` print compact titles, URLs, and descriptions in search mode
 - `-json` print pretty JSON
 - `-raw` print raw response body
 
 ## Default CLI output
 
-By default, results are printed in a human-friendly terminal format with:
+### Search mode
+
+By default, search results are printed in a human-friendly terminal format with:
 
 - numbered results
 - indented URLs
 - wrapped descriptions
 - separators between entries
 
-## Example curl equivalent
+### Answer mode
 
-This app is equivalent to a request like:
+By default, answers are printed in a readable CLI format with:
 
-```bash
-curl -s --compressed -X 'POST' \
-  'https://api.search.brave.com/res/v1/web/search' \
-  -H 'accept: application/json' \
-  -H 'Accept-Encoding: gzip' \
-  -H 'x-subscription-token: <YOUR_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "q": "Brave Search",
-  "country": "US",
-  "search_lang": "en",
-  "count": 20
-}'
-```
+- a heading
+- the prompt used
+- wrapped answer text
+- token usage when available
+
+## API details
+
+See [`API.md`](./API.md) for the Search API and Answers API request/response details used by this project.
 
 ## Notes
 
